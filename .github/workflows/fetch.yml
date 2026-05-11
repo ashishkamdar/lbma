@@ -1,0 +1,42 @@
+name: Fetch LBMA London Fix
+on:
+  schedule:
+    - cron: '5 10 * * 1-5'
+    - cron: '5 11 * * 1-5'
+    - cron: '35 14 * * 1-5'
+    - cron: '35 15 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: lbma-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch latest LBMA fix
+        run: python scripts/fetch_lbma.py
+      - name: Show output
+        run: cat london-fix.json
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain london-fix.json)" ]]; then
+            FIX_DATE=$(jq -r .latest_fix_date london-fix.json)
+            git add london-fix.json
+            git commit -m "fix: $FIX_DATE"
+            git push
+          else
+            echo "no change"
+          fi

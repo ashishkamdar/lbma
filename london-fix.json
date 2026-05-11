@@ -1,0 +1,45 @@
+{
+  "fetched_at": "2026-05-11T15:37:34+00:00",
+  "latest_fix_date": "2026-05-08",
+  "currency": "USD",
+  "unit": "troy_ounce",
+  "source": "LBMA (prices.lbma.org.uk)",
+  "fixes": {
+    "gold": {
+      "am": {
+        "usd": 4710.1,
+        "date": "2026-05-08"
+      },
+      "pm": {
+        "usd": 4741.4,
+        "date": "2026-05-08"
+      }
+    },
+    "silver": {
+      "noon": {
+        "usd": 80.64,
+        "date": "2026-05-08"
+      }
+    },
+    "platinum": {
+      "am": {
+        "usd": 2052,
+        "date": "2026-05-08"
+      },
+      "pm": {
+        "usd": 2022,
+        "date": "2026-05-08"
+      }
+    },
+    "palladium": {
+      "am": {
+        "usd": 1502,
+        "date": "2026-05-08"
+      },
+      "pm": {
+        "usd": 1475,
+        "date": "2026-05-08"
+      }
+    }
+  }
+}
