@@ -1,18 +1,7 @@
 name: Fetch LBMA London Fix
+# Manual-only: trigger via the Actions tab or the `gh workflow run fetch.yml`
+# command. No scheduled cron — runs only when explicitly invoked.
 on:
-  # London fix auctions (BST):
-  #   AM gold ~09:30 UTC, PM gold ~14:00 UTC.
-  # LBMA's static JSON can lag the auction by 1-2 hours (observed
-  # 2026-05-11: PM auction at 14:00 UTC, JSON still at May 8 by 15:40 UTC).
-  # We sweep multiple times across the day so a slow LBMA refresh doesn't
-  # leave the page a full day stale.
-  schedule:
-    - cron: '5 10 * * 1-5'   # 10:05 UTC -- AM fix
-    - cron: '5 11 * * 1-5'   # 11:05 UTC -- AM retry
-    - cron: '35 14 * * 1-5'  # 14:35 UTC -- PM fix
-    - cron: '35 15 * * 1-5'  # 15:35 UTC -- PM retry
-    - cron: '35 17 * * 1-5'  # 17:35 UTC -- PM late retry (LBMA slow days)
-    - cron: '35 19 * * 1-5'  # 19:35 UTC -- final daily attempt
   workflow_dispatch: {}
 
 permissions:
