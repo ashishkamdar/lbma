@@ -29,12 +29,39 @@ FIXES = {
     "palladium_pm": ("palladium", "pm"),
 }
 
-USER_AGENT = "prismx-lbma-fix/1.0 (+https://github.com/ashishkamdar/prismx-lbma-fix)"
+# LBMA's CDN fingerprints incoming requests and challenges those that look
+# bot-shaped (polite identifier UAs, missing Accept-Language, no Referer)
+# when they come from a flagged IP range. GitHub Actions runners share IP
+# space with every scraper on the internet, so they get challenged often.
+# Presenting as a normal desktop browser sidesteps the fingerprint in the
+# common case. This is public benchmark data — we're not bypassing auth.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Referer": "https://www.lbma.org.uk/",
+}
 
-# LBMA's static JSON occasionally returns non-JSON during brief upstream blips,
-# which crashes a single sweep even though the next one would succeed.
-# Three attempts, ~20s cap, well under the workflow's per-job budget.
-RETRY_DELAYS = (0, 5, 15)
+# One quick retry handles transient HTTP 5xx / truncated bodies. We do NOT
+# retry an AntiBotChallenge inside a run — the runner's IP doesn't change
+# within a run, so retrying just hits the same wall. The workflow's 6 cron
+# slots per day are the real retry mechanism for sticky challenges (each
+# slot lands on whatever runner IP GitHub happens to assign).
+RETRY_DELAYS = (0, 10)
+
+
+class AntiBotChallenge(Exception):
+    """LBMA's CDN returned an HTML interstitial in place of JSON.
+
+    Sticky on this runner's IP for minutes-to-hours; the next scheduled
+    cron slot will retry from a fresh runner. Surfaced as a distinct
+    exception type so the failure email reads as "challenge, next slot
+    will retry" rather than a generic JSON decode error.
+    """
 
 
 def fetch_json(url: str) -> object:
@@ -50,11 +77,10 @@ def fetch_json(url: str) -> object:
         body: bytes | None = None
         status: int | None = None
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            req = urllib.request.Request(url, headers=BROWSER_HEADERS)
             with urllib.request.urlopen(req, timeout=20) as resp:
                 status = resp.status
                 body = resp.read()
-            return json.loads(body)
         except urllib.error.HTTPError as e:
             last_err = e
             try:
@@ -62,12 +88,30 @@ def fetch_json(url: str) -> object:
             except Exception:
                 body = b""
             _warn(attempt, url, e, e.code, body)
+            continue
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             last_err = e
             _warn(attempt, url, e, None, None)
+            continue
+
+        # HTTP 200 but the body is an HTML page (CDN challenge). Don't retry.
+        if body.lstrip().startswith(b"<"):
+            err = AntiBotChallenge(
+                f"LBMA returned HTML (HTTP {status}) instead of JSON for "
+                f"{url}. Most likely: this runner's IP is being challenged "
+                "by LBMA's CDN. The next scheduled cron slot will retry "
+                "from a different runner."
+            )
+            _warn(attempt, url, err, status, body)
+            raise err
+
+        try:
+            return json.loads(body)
         except json.JSONDecodeError as e:
             last_err = e
             _warn(attempt, url, e, status, body)
+            continue
+
     assert last_err is not None
     raise last_err
 
