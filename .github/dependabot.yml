@@ -1,0 +1,34 @@
+# Why this file exists:
+#   GitHub Actions runtime deprecations (Node 16 -> 20 -> 24 -> ...) historically
+#   coincide with major-version bumps of every official action. Pinning major
+#   tags here and letting Dependabot open PRs whenever a new major ships means
+#   we get the upgrade PR BEFORE the runner starts emailing "Node N is deprecated"
+#   on every scheduled run.
+#
+# Scope:
+#   Only the `github-actions` ecosystem. The Python deps in scripts/ are
+#   stdlib-only (no requirements.txt), so there's nothing for the `pip`
+#   ecosystem to manage here.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    groups:
+      # One consolidated PR per week containing every action bump, rather than
+      # one PR per action. Two actions in this repo today (checkout,
+      # setup-python); review noise stays low even if more are added later.
+      all-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - github-actions
