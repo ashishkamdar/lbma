@@ -129,7 +129,17 @@ def _warn(attempt: int, url: str, err: Exception, status: int | None, body: byte
 def latest_row(slug: str) -> dict:
     data = fetch_json(f"{LBMA_BASE}/{slug}.json")
     # Pick the last entry whose USD value (v[0]) is not null.
+    # LBMA's static JSON has been observed to occasionally include non-dict
+    # elements in the array (incident 2026-06-09: AttributeError on .get from
+    # a bare string in the data list). Skip those defensively and log the
+    # element so a recurrence builds evidence about what LBMA is sending.
     for row in reversed(data):
+        if not isinstance(row, dict):
+            print(
+                f"warn: skipping non-dict row in {slug}.json: {row!r}",
+                file=sys.stderr,
+            )
+            continue
         v = row.get("v") or []
         if v and v[0] is not None:
             return {"d": row["d"], "usd": v[0]}
