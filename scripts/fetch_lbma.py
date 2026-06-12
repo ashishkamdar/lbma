@@ -64,6 +64,21 @@ class AntiBotChallenge(Exception):
     """
 
 
+class LBMAStubResponse(Exception):
+    """LBMA returned a non-list shape (e.g. {"message": "..."} error stub).
+
+    Different from AntiBotChallenge: the request succeeded with status 200
+    and the body parsed as JSON, but the shape isn't the usual array of
+    rows. Observed 2026-06-10 onwards: LBMA's CDN intermittently serves an
+    error stub for individual slugs (gold_am most often), then recovers
+    within minutes when the next cron slot fetches a fresh response.
+
+    Caught in main() and treated as "skip this run quietly" rather than a
+    failure — the workflow exits 0, london-fix.json is left unchanged, and
+    the next scheduled cron slot retries from a fresh response.
+    """
+
+
 def fetch_json(url: str) -> object:
     """GET *url* and parse JSON, retrying on transient HTTP/JSON failures.
 
@@ -128,11 +143,21 @@ def _warn(attempt: int, url: str, err: Exception, status: int | None, body: byte
 
 def latest_row(slug: str) -> dict:
     data = fetch_json(f"{LBMA_BASE}/{slug}.json")
+    # LBMA's CDN intermittently serves a non-list shape for individual
+    # slugs (e.g. {"message": "..."} error stub for gold_am observed
+    # 2026-06-10 onwards). Bail early so main() can treat this as
+    # "skip this run, the next slot will retry" rather than crashing
+    # the whole workflow with a failure email.
+    if not isinstance(data, list):
+        raise LBMAStubResponse(
+            f"LBMA returned non-list shape for {slug}.json "
+            f"(likely a CDN error stub): {type(data).__name__} = {data!r}"
+        )
     # Pick the last entry whose USD value (v[0]) is not null.
-    # LBMA's static JSON has been observed to occasionally include non-dict
-    # elements in the array (incident 2026-06-09: AttributeError on .get from
-    # a bare string in the data list). Skip those defensively and log the
-    # element so a recurrence builds evidence about what LBMA is sending.
+    # The per-row isinstance(dict) guard below covers a different mode:
+    # LBMA has also been seen to embed bare strings inside an otherwise-
+    # valid row array (incident 2026-06-09). Skip those defensively and
+    # log the element so a recurrence builds evidence.
     for row in reversed(data):
         if not isinstance(row, dict):
             print(
@@ -165,7 +190,15 @@ def build_payload() -> dict:
 
 
 def main() -> None:
-    payload = build_payload()
+    try:
+        payload = build_payload()
+    except LBMAStubResponse as e:
+        # Don't fail the workflow — LBMA's stub responses are transient
+        # CDN jitter, not a real error. Leaving london-fix.json untouched
+        # means the "Commit if changed" step prints "no change" and the
+        # workflow exits green, no failure email. Next cron slot retries.
+        print(f"skip: {e}. Next scheduled cron slot will retry.", file=sys.stderr)
+        return
     out_path = Path("london-fix.json")
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"wrote {out_path} latest_fix_date={payload['latest_fix_date']}")
